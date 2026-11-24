@@ -19,8 +19,10 @@
   date; finished ones one click away. A project opens to its open issues
 - **Sort** issue lists by updated, created, priority, status, due date, title
   or assignee, and projects by updated, name, target date, status, priority,
-  created or lead; **↑/↓** flips the order. Linear sorts on its side, so the
-  order holds across *Load more*
+  created, lead or progress; **↑/↓** flips the order. Linear sorts on its
+  side, so the order holds across *Load more*. Linear can't sort by
+  progress, so that one loads all the team's projects and sorts them in the
+  sidebar
 - **Picks up where you left off**: closing the sidebar or switching to
   another one and back reopens the same screen (an issue, a project, search
   results) at the same scroll position, and **←** walks back the way you came

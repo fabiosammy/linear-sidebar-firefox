@@ -27,10 +27,14 @@ const PROJECT_SORTS = [
   ["priority", "Priority", "Ascending"],
   ["createdAt", "Created", "Descending"],
   ["lead", "Lead", "Ascending"],
+  ["progress", "Progress", "Descending"],
 ];
 
-// { field, order } -> the `sort` argument of issues/projects.
-const sortArg = ({ field, order }) => [{ [field]: { order } }];
+// Fields Linear can't sort by: the sidebar loads every page and sorts itself.
+const LOCAL_SORTS = ["progress"];
+
+// { field, order } -> the `sort` argument of issues/projects (none for local sorts).
+const sortArg = ({ field, order }) => (LOCAL_SORTS.includes(field) ? undefined : [{ [field]: { order } }]);
 
 // Issues that aren't done or canceled.
 const OPEN_STATES = { state: { type: { nin: ["completed", "canceled"] } } };

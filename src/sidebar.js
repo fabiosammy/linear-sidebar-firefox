@@ -276,12 +276,28 @@ function projectRow(project) {
   );
 }
 
+const fetchProjects = (after) =>
+  gql("projects", { teamId, after, sort: sortArg(sorts.projects) }).then((data) => data.team.projects);
+
+// Linear can't sort projects by progress, so this loads every page and sorts
+// here (ties by name), handing loadPaged a single page with nothing after it.
+async function allProjectsByProgress() {
+  const nodes = [];
+  let page = { pageInfo: { hasNextPage: true, endCursor: null } };
+  while (page.pageInfo.hasNextPage) {
+    page = await fetchProjects(page.pageInfo.endCursor);
+    nodes.push(...page.nodes);
+  }
+  const sign = sorts.projects.order === "Ascending" ? 1 : -1;
+  nodes.sort((a, b) => sign * ((a.progress ?? 0) - (b.progress ?? 0)) || a.name.localeCompare(b.name));
+  return { nodes, pageInfo: { hasNextPage: false, endCursor: null } };
+}
+
 // Open projects first; finished ones behind a button once all are loaded.
 function showProjects() {
   const finished = [];
   return loadPaged({
-    fetchPage: (after) =>
-      gql("projects", { teamId, after, sort: sortArg(sorts.projects) }).then((data) => data.team.projects),
+    fetchPage: sorts.projects.field === "progress" ? allProjectsByProgress : fetchProjects,
     render: (projects) => {
       finished.push(...projects.filter((p) => FINISHED.includes(p.status?.type)));
       return projects.filter((p) => !FINISHED.includes(p.status?.type)).map(projectRow);
