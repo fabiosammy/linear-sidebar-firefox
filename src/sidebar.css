@@ -196,7 +196,8 @@ a {
 }
 
 #key,
-#team {
+#team,
+#sort {
   flex: 1;
   min-width: 0;
   padding: 5px 10px;
@@ -229,6 +230,28 @@ a {
 #top .icon {
   font-size: 16px;
   padding: 2px 6px;
+}
+
+/* --- Sort bar ------------------------------------------------------------------ */
+
+#sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#sort {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+#sort-order {
+  font-size: 14px;
+  padding: 0 4px;
 }
 
 /* --- Rows ---------------------------------------------------------------------- */

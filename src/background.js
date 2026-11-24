@@ -18,7 +18,8 @@ browser.omnibox.onInputChanged.addListener((text, suggest) => {
   suggestTimer = setTimeout(async () => {
     const { teamId } = await browser.storage.local.get("teamId");
     const filter = { title: { containsIgnoreCase: query }, ...(teamId && { team: { id: { eq: teamId } } }) };
-    const data = await gql("issues", { filter }).catch(() => null);
+    const sort = sortArg({ field: "updatedAt", order: "Descending" });
+    const data = await gql("issues", { filter, sort }).catch(() => null);
     const issues = data?.issues.nodes.slice(0, 6) ?? [];
     suggest(issues.map((i) => ({ content: i.url, description: escape(`${i.identifier} ${i.title} — ${i.state.name}`) })));
   }, 250);

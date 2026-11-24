@@ -8,6 +8,30 @@ const PAGE_SIZE = 50;
 // Thrown when there is no key or Linear rejects it, so the UI can ask again.
 const NO_KEY = "NO_KEY";
 
+// Sort choices: [Linear sort field, label, default order]. Linear sorts on the
+// server, so the order holds across "Load more" pages.
+const ISSUE_SORTS = [
+  ["updatedAt", "Updated", "Descending"],
+  ["createdAt", "Created", "Descending"],
+  ["priority", "Priority", "Ascending"],
+  ["workflowState", "Status", "Ascending"],
+  ["dueDate", "Due date", "Ascending"],
+  ["title", "Title", "Ascending"],
+  ["assignee", "Assignee", "Ascending"],
+];
+const PROJECT_SORTS = [
+  ["updatedAt", "Updated", "Descending"],
+  ["name", "Name", "Ascending"],
+  ["targetDate", "Target date", "Ascending"],
+  ["status", "Status", "Ascending"],
+  ["priority", "Priority", "Ascending"],
+  ["createdAt", "Created", "Descending"],
+  ["lead", "Lead", "Ascending"],
+];
+
+// { field, order } -> the `sort` argument of issues/projects.
+const sortArg = ({ field, order }) => [{ [field]: { order } }];
+
 // Issues that aren't done or canceled.
 const OPEN_STATES = { state: { type: { nin: ["completed", "canceled"] } } };
 
@@ -30,8 +54,8 @@ const QUERIES = {
   `,
 
   issues: `
-    query Issues($filter: IssueFilter, $after: String) {
-      issues(first: ${PAGE_SIZE}, after: $after, filter: $filter, orderBy: updatedAt) {
+    query Issues($filter: IssueFilter, $after: String, $sort: [IssueSortInput!]) {
+      issues(first: ${PAGE_SIZE}, after: $after, filter: $filter, sort: $sort) {
         nodes { ${ISSUE_ROW} }
         pageInfo { hasNextPage endCursor }
       }
@@ -39,9 +63,9 @@ const QUERIES = {
   `,
 
   projects: `
-    query Projects($teamId: String!, $after: String) {
+    query Projects($teamId: String!, $after: String, $sort: [ProjectSortInput!]) {
       team(id: $teamId) {
-        projects(first: ${PAGE_SIZE}, after: $after, orderBy: updatedAt) {
+        projects(first: ${PAGE_SIZE}, after: $after, sort: $sort) {
           nodes {
             id
             name

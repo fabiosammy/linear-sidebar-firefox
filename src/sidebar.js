@@ -6,9 +6,7 @@ const $ = (id) => document.getElementById(id);
 const list = $("list");
 const status = $("status");
 
-let view = "issues";
 let listToken = 0; // bumped on every view change so late answers are dropped
-let rerender = () => {}; // redraws the current view (Reload button)
 let teams = [];
 let teamId = null;
 let urlKey = null; // the workspace's part of linear.app URLs
@@ -31,22 +29,135 @@ function describeError(err, what) {
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const formatDate = (iso) => (iso ? dateFormat.format(new Date(iso)) : "");
 
-// --- Views ------------------------------------------------------------------
+// --- Navigation -----------------------------------------------------------------
+//
+// Where the sidebar is, as a stack of places (storage.local "nav"), so closing
+// it or switching to another sidebar and back reopens the same screen at the
+// same scroll position. Back pops the stack. A place is one of:
+//   { view: "issues" | "mine" | "projects" }    a tab
+//   { view: "results", query }                   title search results
+//   { view: "project", project: { id, name, url } }
+//   { view: "issue", id }                        id = "DOS-123"
+// Each place may carry `scroll`, the list's scroll position.
 
-function setView(name, render) {
-  view = name;
-  rerender = render;
-  listToken++;
-  list.replaceChildren();
-  list.scrollTop = 0;
-  setStatus("");
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-  if (["issues", "mine", "projects"].includes(name)) browser.storage.local.set({ view: name });
+const TABS = ["issues", "mine", "projects", "results"];
+const MAX_DEPTH = 20;
+
+let stack = [{ view: "issues" }];
+let pendingScroll = null; // scroll to restore once the place has content
+
+const here = () => stack[stack.length - 1];
+const saveNav = () => browser.storage.local.set({ nav: stack });
+
+// Opens a place on top of the current one; `root` starts over from it (tabs).
+function go(place, { root = false } = {}) {
+  stack = root ? [place] : [...stack, place].slice(-MAX_DEPTH);
+  saveNav();
+  return render();
 }
+
+function back() {
+  stack = stack.length > 1 ? stack.slice(0, -1) : [{ view: "issues" }];
+  saveNav();
+  return render();
+}
+
+// Remembers the scroll position, a moment after the user stops scrolling.
+let scrollTimer = null;
+list.addEventListener("scroll", () => {
+  if (pendingScroll !== null) return; // still drawing; keep the saved one
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => {
+    here().scroll = list.scrollTop;
+    saveNav();
+  }, 200);
+});
+
+function restoreScroll() {
+  if (pendingScroll === null) return;
+  list.scrollTop = pendingScroll;
+  pendingScroll = null;
+}
+
+// Draws the place on top of the stack.
+function render() {
+  const place = here();
+  listToken++;
+  clearTimeout(scrollTimer);
+  pendingScroll = place.scroll ?? 0;
+  list.replaceChildren();
+  setStatus("");
+  const tab = stack[0].view;
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === tab));
+  $("tabs").querySelector('[data-view="results"]').hidden = tab !== "results";
+  if (tab === "results") $("search").value = stack[0].query;
+  renderSortBar(place.view);
+  switch (place.view) {
+    case "mine":
+      return showMine();
+    case "projects":
+      return showProjects();
+    case "results":
+      return showResults(place.query);
+    case "project":
+      return showProject(place.project);
+    case "issue":
+      return showIssue(place.id);
+    default:
+      return showIssues();
+  }
+}
+
+// --- Sorting ----------------------------------------------------------------------
+//
+// One sort for issue lists (team, mine, search, project issues) and one for
+// projects, remembered in storage.local "sorts".
+
+const SORTS = { issues: ISSUE_SORTS, projects: PROJECT_SORTS };
+const sorts = { issues: { field: "updatedAt", order: "Descending" }, projects: { field: "updatedAt", order: "Descending" } };
+const sortKind = (view) => (view === "projects" ? "projects" : view === "issue" ? null : "issues");
+
+function renderSortBar(view) {
+  const kind = sortKind(view);
+  $("sort-bar").hidden = !kind;
+  if (!kind) return;
+  const { field, order } = sorts[kind];
+  $("sort").replaceChildren(
+    ...SORTS[kind].map(([value, label]) => {
+      const option = el("option", null, label);
+      option.value = value;
+      return option;
+    }),
+  );
+  $("sort").value = field;
+  $("sort-order").textContent = order === "Ascending" ? "↑" : "↓";
+  $("sort-order").title = order === "Ascending" ? "Ascending (click for descending)" : "Descending (click for ascending)";
+}
+
+async function setSort(kind, sort) {
+  sorts[kind] = sort;
+  await browser.storage.local.set({ sorts });
+  here().scroll = 0;
+  render();
+}
+
+$("sort").addEventListener("change", () => {
+  const kind = sortKind(here().view);
+  const [field, , order] = SORTS[kind].find(([value]) => value === $("sort").value);
+  setSort(kind, { field, order });
+});
+
+$("sort-order").addEventListener("click", () => {
+  const kind = sortKind(here().view);
+  const { field, order } = sorts[kind];
+  setSort(kind, { field, order: order === "Ascending" ? "Descending" : "Ascending" });
+});
+
+// --- Lists ------------------------------------------------------------------------
 
 // Fills the list one page at a time, with "Load more" while Linear has more.
 // `fetchPage(after)` returns a connection ({ nodes, pageInfo }).
-async function loadPaged({ fetchPage, render, loadingText, emptyText, what, done }) {
+async function loadPaged({ fetchPage, render: draw, loadingText, emptyText, what, done }) {
   const token = listToken;
   let after = null;
   let count = 0;
@@ -58,7 +169,7 @@ async function loadPaged({ fetchPage, render, loadingText, emptyText, what, done
     try {
       const page = await fetchPage(after);
       if (token !== listToken) return; // the user switched views meanwhile
-      const nodes = render(page.nodes);
+      const nodes = draw(page.nodes);
       count += page.nodes.length;
       list.append(...nodes);
       after = page.pageInfo.endCursor;
@@ -68,6 +179,7 @@ async function loadPaged({ fetchPage, render, loadingText, emptyText, what, done
     } catch (err) {
       if (token === listToken) setStatus(describeError(err, what));
     }
+    if (token === listToken) restoreScroll();
   }
 
   more.addEventListener("click", nextPage);
@@ -100,7 +212,7 @@ function stateDot(state) {
   return dot;
 }
 
-function issueRow(issue, back) {
+function issueRow(issue) {
   return itemButton(
     {
       marker: stateDot(issue.state),
@@ -108,27 +220,22 @@ function issueRow(issue, back) {
       line2: [issue.identifier, issue.state?.name, issue.assignee?.displayName].filter(Boolean).join(" · "),
       url: issue.url,
     },
-    () => showIssue(issue.identifier, back),
+    () => go({ view: "issue", id: issue.identifier }),
   );
 }
 
-function issuesView({ name, filter, loadingText, emptyText }) {
-  const render = () => {
-    setView(name, render);
-    return loadPaged({
-      fetchPage: (after) => gql("issues", { filter, after }).then((data) => data.issues),
-      render: (issues) => issues.map((issue) => issueRow(issue, render)),
-      what: "the issues",
-      loadingText,
-      emptyText,
-    });
-  };
-  return render();
+function issueList({ filter, loadingText, emptyText, what = "the issues" }) {
+  return loadPaged({
+    fetchPage: (after) => gql("issues", { filter, after, sort: sortArg(sorts.issues) }).then((data) => data.issues),
+    render: (issues) => issues.map(issueRow),
+    what,
+    loadingText,
+    emptyText,
+  });
 }
 
 function showIssues() {
-  return issuesView({
-    name: "issues",
+  return issueList({
     filter: { team: { id: { eq: teamId } }, ...OPEN_STATES },
     loadingText: `Loading ${team()?.key} issues…`,
     emptyText: "No open issues in this team.",
@@ -136,11 +243,18 @@ function showIssues() {
 }
 
 function showMine() {
-  return issuesView({
-    name: "mine",
+  return issueList({
     filter: { team: { id: { eq: teamId } }, assignee: { isMe: { eq: true } }, ...OPEN_STATES },
     loadingText: "Loading your issues…",
     emptyText: "No open issues assigned to you in this team.",
+  });
+}
+
+function showResults(query) {
+  return issueList({
+    filter: { team: { id: { eq: teamId } }, title: { containsIgnoreCase: query } },
+    loadingText: `Searching for “${query}”…`,
+    emptyText: `No ${team()?.key} issue titles contain “${query}”.`,
   });
 }
 
@@ -156,17 +270,18 @@ function projectRow(project) {
     project.lead?.displayName,
     project.targetDate && `due ${formatDate(project.targetDate)}`,
   ];
-  return itemButton({ marker: bar, line1: project.name, line2: line2.filter(Boolean).join(" · "), url: project.url }, () =>
-    showProject(project),
+  const { id, name, url } = project;
+  return itemButton({ marker: bar, line1: name, line2: line2.filter(Boolean).join(" · "), url }, () =>
+    go({ view: "project", project: { id, name, url } }),
   );
 }
 
 // Open projects first; finished ones behind a button once all are loaded.
 function showProjects() {
-  setView("projects", showProjects);
   const finished = [];
   return loadPaged({
-    fetchPage: (after) => gql("projects", { teamId, after }).then((data) => data.team.projects),
+    fetchPage: (after) =>
+      gql("projects", { teamId, after, sort: sortArg(sorts.projects) }).then((data) => data.team.projects),
     render: (projects) => {
       finished.push(...projects.filter((p) => FINISHED.includes(p.status?.type)));
       return projects.filter((p) => !FINISHED.includes(p.status?.type)).map(projectRow);
@@ -184,11 +299,11 @@ function showProjects() {
 }
 
 // A header with Back, a name and buttons, on top of a project or an issue.
-function head(name, back, buttons) {
+function head(name, buttons) {
   const node = el("div", "collection-head");
   const backButton = el("button", null, "←");
   backButton.title = "Back";
-  backButton.addEventListener("click", () => back());
+  backButton.addEventListener("click", back);
   node.append(backButton, el("div", "name", name), ...buttons);
   return node;
 }
@@ -200,20 +315,14 @@ function iconButton(text, title, onClick) {
   return button;
 }
 
-function showProject(project, back = rerender) {
-  const render = () => {
-    setView("project", render);
-    list.append(head(project.name, back, [iconButton("↗", "Open the project in Linear", () => openTab(project.url))]));
-    return loadPaged({
-      fetchPage: (after) =>
-        gql("issues", { filter: { project: { id: { eq: project.id } }, ...OPEN_STATES }, after }).then((data) => data.issues),
-      render: (issues) => issues.map((issue) => issueRow(issue, render)),
-      what: "the project's issues",
-      loadingText: "Loading the project's issues…",
-      emptyText: "No open issues in this project.",
-    });
-  };
-  return render();
+function showProject(project) {
+  list.append(head(project.name, [iconButton("↗", "Open the project in Linear", () => openTab(project.url))]));
+  return issueList({
+    filter: { project: { id: { eq: project.id } }, ...OPEN_STATES },
+    what: "the project's issues",
+    loadingText: "Loading the project's issues…",
+    emptyText: "No open issues in this project.",
+  });
 }
 
 function chip(text, color) {
@@ -227,45 +336,40 @@ function chip(text, color) {
   return node;
 }
 
-// An issue's details and description. `back` redraws the view it came from.
-async function showIssue(identifier, back = rerender) {
-  const render = async () => {
-    setView("issue", render);
-    const token = listToken;
-    setStatus(`Loading ${identifier}…`);
-    try {
-      const { issue } = await gql("issue", { id: identifier });
-      if (token !== listToken) return;
-      setStatus("");
-      const copy = iconButton("🔗", "Copy the issue's link", async () => {
-        await navigator.clipboard.writeText(issue.url);
-        setStatus(`Copied the link to ${issue.identifier}.`);
-      });
-      list.append(
-        head(issue.identifier, back, [copy, iconButton("↗", "Open in Linear", () => openTab(issue.url))]),
-        issueDetails(issue, render),
-      );
-    } catch (err) {
-      if (token !== listToken) return;
-      const missing = /not found|entity not found/i.test(err.message);
-      list.append(head(identifier, back, []));
-      setStatus(missing ? `There's no issue ${identifier}, or you can't see it.` : describeError(err, identifier));
-    }
-  };
-  return render();
+// An issue's details and description.
+async function showIssue(identifier) {
+  const token = listToken;
+  setStatus(`Loading ${identifier}…`);
+  try {
+    const { issue } = await gql("issue", { id: identifier });
+    if (token !== listToken) return;
+    setStatus("");
+    const copy = iconButton("🔗", "Copy the issue's link", async () => {
+      await navigator.clipboard.writeText(issue.url);
+      setStatus(`Copied the link to ${issue.identifier}.`);
+    });
+    list.append(head(issue.identifier, [copy, iconButton("↗", "Open in Linear", () => openTab(issue.url))]), issueDetails(issue));
+  } catch (err) {
+    if (token !== listToken) return;
+    const missing = /not found|entity not found/i.test(err.message);
+    list.append(head(identifier, []));
+    setStatus(missing ? `There's no issue ${identifier}, or you can't see it.` : describeError(err, identifier));
+  }
+  restoreScroll();
 }
 
-function issueDetails(issue, self) {
+function issueDetails(issue) {
   const node = el("article", "issue");
   const chips = el("div", "chips");
   chips.append(chip(issue.state.name, issue.state.color));
   if (issue.priorityLabel && issue.priorityLabel !== "No priority") chips.append(chip(issue.priorityLabel));
   chips.append(chip(issue.assignee ? `👤 ${issue.assignee.displayName}` : "Unassigned"));
   if (issue.project) {
-    const project = chip(`▦ ${issue.project.name}`);
+    const { id, name, url } = issue.project;
+    const project = chip(`▦ ${name}`);
     project.title = "Open the project's issues";
     project.style.cursor = "pointer";
-    project.addEventListener("click", () => showProject(issue.project, self));
+    project.addEventListener("click", () => go({ view: "project", project: { id, name, url } }));
     chips.append(project);
   }
   for (const label of issue.labels.nodes) chips.append(chip(label.name, label.color));
@@ -292,14 +396,8 @@ function search(text) {
   if (!query) return;
   const identifier =
     identifierFromUrl(query) ?? parseIdentifier(query) ?? (/^\d+$/.test(query) ? `${team()?.key}-${query}` : null);
-  if (identifier) return showIssue(identifier);
-  $("tabs").querySelector('[data-view="results"]').hidden = false;
-  return issuesView({
-    name: "results",
-    filter: { team: { id: { eq: teamId } }, title: { containsIgnoreCase: query } },
-    loadingText: `Searching for “${query}”…`,
-    emptyText: `No ${team()?.key} issue titles contain “${query}”.`,
-  });
+  if (identifier) return go({ view: "issue", id: identifier });
+  return go({ view: "results", query }, { root: true });
 }
 
 $("search-form").addEventListener("submit", (event) => {
@@ -317,7 +415,7 @@ function followLink(event) {
   event.preventDefault();
   const identifier = identifierFromUrl(a.href);
   const newTab = event.type === "auxclick" || event.ctrlKey || event.metaKey;
-  if (identifier && !newTab && view !== "setup") showIssue(identifier);
+  if (identifier && !newTab && $("setup").hidden) go({ view: "issue", id: identifier });
   else openTab(a.href);
 }
 document.addEventListener("click", followLink);
@@ -325,10 +423,9 @@ document.addEventListener("auxclick", (event) => event.button === 1 && followLin
 
 // --- Setup and start --------------------------------------------------------------
 
-const MAIN = ["top", "search-form", "tabs", "list", "status"];
+const MAIN = ["top", "search-form", "tabs", "sort-bar", "list", "status"];
 
 function showSetup(message = "") {
-  view = "setup";
   listToken++;
   $("setup").hidden = false;
   for (const id of MAIN) $(id).hidden = true;
@@ -363,28 +460,42 @@ $("disconnect").addEventListener("click", async () => {
   showSetup("Disconnected. The API key was removed from this browser; revoke it in Linear if you no longer need it.");
 });
 
+// A new team starts over on the same tab (search results become Issues).
 $("team").addEventListener("change", async () => {
   teamId = $("team").value;
   await browser.storage.local.set({ teamId });
-  $("tabs").querySelector('[data-view="results"]').hidden = true;
-  showView(["issues", "mine", "projects"].includes(view) ? view : "issues");
+  const tab = stack[0].view;
+  go({ view: ["mine", "projects"].includes(tab) ? tab : "issues" }, { root: true });
 });
 
-$("refresh").addEventListener("click", () => rerender());
+$("refresh").addEventListener("click", () => render());
 
 $("open-team").addEventListener("click", () => openTab(`https://linear.app/${urlKey}/team/${team()?.key}/active`));
 
-const VIEWS = { issues: showIssues, mine: showMine, projects: showProjects, results: () => search($("search").value) };
-const showView = (name) => (VIEWS[name] ?? showIssues)();
-
 $("tabs").addEventListener("click", (event) => {
   const name = event.target.closest("button")?.dataset.view;
-  if (name) showView(name);
+  if (!name) return;
+  if (name !== "results") $("search").value = "";
+  go(name === "results" ? { view: "results", query: stack[0].query ?? $("search").value.trim() } : { view: name }, {
+    root: true,
+  });
 });
 
+// A saved stack from an older version or a bad write falls back to Issues.
+function validStack(saved) {
+  if (!Array.isArray(saved) || !saved.length || !TABS.includes(saved[0]?.view)) return null;
+  if (saved[0].view === "results" && !saved[0].query) return null;
+  return saved;
+}
+
 async function start() {
-  const stored = await browser.storage.local.get(["apiKey", "teamId", "view"]);
+  const stored = await browser.storage.local.get(["apiKey", "teamId", "nav", "sorts"]);
   if (!stored.apiKey || !(await browser.permissions.contains(HOST_ACCESS))) return showSetup();
+  for (const kind of Object.keys(sorts)) {
+    const saved = stored.sorts?.[kind];
+    if (SORTS[kind].some(([field]) => field === saved?.field)) sorts[kind] = saved;
+  }
+  stack = validStack(stored.nav) ?? [{ view: "issues" }];
   $("setup").hidden = true;
   for (const id of MAIN) $(id).hidden = false;
   setStatus("Connecting to Linear…");
@@ -406,7 +517,7 @@ async function start() {
     }),
   );
   $("team").value = teamId;
-  showView(stored.view);
+  render();
 }
 
 start();

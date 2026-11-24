@@ -12,11 +12,18 @@
 
 ## Features
 
-- **Issues**: the team's open issues (not done or canceled), most recently
-  updated first, with their status, ID and assignee
+- **Issues**: the team's open issues (not done or canceled), with their
+  status, ID and assignee
 - **My issues**: the open ones assigned to you
 - **Projects**: the team's projects with status, progress, lead and target
   date; finished ones one click away. A project opens to its open issues
+- **Sort** issue lists by updated, created, priority, status, due date, title
+  or assignee, and projects by updated, name, target date, status, priority,
+  created or lead; **↑/↓** flips the order. Linear sorts on its side, so the
+  order holds across *Load more*
+- **Picks up where you left off**: closing the sidebar or switching to
+  another one and back reopens the same screen (an issue, a project, search
+  results) at the same scroll position, and **←** walks back the way you came
 - **Search** by ID (`DOS-123`, `dos 123`, or just `123` for the selected
   team), by pasting a linear.app link, or by words in the title
 - **Issue details** in the sidebar: status, priority, assignee, project,
@@ -37,7 +44,8 @@
 3. In Linear, open **Settings → Security & access** and create a **personal
    API key** (read access is enough). Paste it in the sidebar and click
    **Connect**, then allow access to api.linear.app when Firefox asks.
-4. Pick a team at the top. The sidebar remembers it and your last tab.
+4. Pick a team at the top. The sidebar remembers it, where you were and your
+   sort choices.
 
 **⏏** disconnects: it removes the key from Firefox. Revoke it in Linear too if
 you don't need it anymore.
@@ -50,7 +58,7 @@ key, which stays in this Firefox profile's add-on storage.
 | Permission | Why |
 | --- | --- |
 | Access to api.linear.app | To read your teams, projects and issues |
-| Storage | To remember the API key, the team and the last tab |
+| Storage | To remember the API key, the team, where you were in the sidebar and your sort choices |
 
 ## Development setup
 
