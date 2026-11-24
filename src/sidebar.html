@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Linear</title>
+    <link rel="stylesheet" href="sidebar.css" />
+  </head>
+  <body>
+    <section id="setup" hidden>
+      <h2>Connect to Linear</h2>
+      <p>
+        The sidebar reads your teams, projects and issues with a personal API key. It stays in this Firefox profile and
+        is only sent to api.linear.app.
+      </p>
+      <ol>
+        <li>
+          In Linear, open <a id="key-settings" href="https://linear.app/settings/account/security">Settings → Security &amp; access</a>
+          and create a <b>personal API key</b> (read access is enough).
+        </li>
+        <li>Paste it here:</li>
+      </ol>
+      <form id="key-form">
+        <input id="key" type="password" placeholder="lin_api_…" autocomplete="off" spellcheck="false" required />
+        <button id="save-key" type="submit">Connect</button>
+      </form>
+      <p id="setup-status"></p>
+    </section>
+
+    <header id="top" hidden>
+      <select id="team" aria-label="Team"></select>
+      <button id="refresh" class="icon" title="Reload">⟳</button>
+      <button id="open-team" class="icon" title="Open this team in Linear">↗</button>
+      <button id="disconnect" class="icon" title="Disconnect (forget the API key)">⏏</button>
+    </header>
+
+    <form id="search-form" hidden>
+      <input id="search" type="search" placeholder="Issue ID (DOS-123) or title…" autocomplete="off" />
+    </form>
+
+    <nav id="tabs" hidden>
+      <button data-view="issues" class="active">Issues</button>
+      <button data-view="mine">My issues</button>
+      <button data-view="projects">Projects</button>
+      <button data-view="results" hidden>Results</button>
+    </nav>
+
+    <main id="list"></main>
+    <p id="status"></p>
+
+    <script src="common.js"></script>
+    <script src="linear.js"></script>
+    <script src="markdown.js"></script>
+    <script src="sidebar.js"></script>
+  </body>
+</html>

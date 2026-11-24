@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Sidebar for Linear",
+  "version": "0.1.0",
+  "description": "Linear in the Firefox sidebar: a team's issues and projects, and any issue by ID with its description, next to the page you're on.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "linear-sidebar@fabiosammy",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.linear.app/*"
+  ],
+  "background": {
+    "scripts": [
+      "src/common.js",
+      "src/linear.js",
+      "src/background.js"
+    ]
+  },
+  "sidebar_action": {
+    "default_title": "Sidebar for Linear",
+    "default_panel": "src/sidebar.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "action": {
+    "default_title": "Toggle the Linear sidebar",
+    "default_icon": "icons/icon.svg"
+  },
+  "omnibox": {
+    "keyword": "lin"
+  },
+  "commands": {
+    "_execute_sidebar_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      }
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "homepage_url": "https://github.com/fabiosammy/linear-sidebar-firefox"
+}

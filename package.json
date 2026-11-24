@@ -1,0 +1,16 @@
+{
+  "name": "linear-sidebar-firefox",
+  "version": "0.1.0",
+  "scripts": {
+    "lint": "web-ext lint",
+    "package": "web-ext build",
+    "start": "web-ext run --url about:debugging#/runtime/this-firefox",
+    "check-version": "node scripts/check-version.js"
+  },
+  "type": "module",
+  "private": "true",
+  "devDependencies": {
+    "web-ext": "^10.8.0"
+  },
+  "license": "MIT"
+}
